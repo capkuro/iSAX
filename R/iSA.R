@@ -186,60 +186,86 @@ function(Strain, Stest, Dtrain, nboot=1000, predict=FALSE, ret.boot=FALSE, seqle
     tabc[,2] <- serr # Error estandar
     tabc[,3] <- tabc[,1]/tabc[,2] #Valor Z
     tabc[,4] <- pnorm(tabc[,3],lower.tail=FALSE)*2 # Norma P
-  # HASTA ACA
     boot <- NULL
     
     if(nboot>0){
+		#bootstraping <- https://en.wikipedia.org/wiki/Bootstrapping_(statistics)
         if(verbose)
         cat("\nbootstrapping...please wait")
         for(i in 1:nboot){
+			#se obtiene length(pS) numeros al azar (con repeticion) entre 1 y length(pS), los cuales se utilizaran como indices para las filas
             idx <- sample(1:length(pS), length(pS), replace=TRUE)
-            tP <- P[idx,]
+            #se asigna a tP las filas de P los cuales esten contenido en P
+			tP <- P[idx,]
+			#vector de probabilidad de S (linea 91) para la nueva muestra
             tpS <- pS[idx]
+			#Intentar encontrar solucion al problema de programacion cuadratica con:
+			# t(tP)%*% tP <- matriz que aparece en la funcion cuadratica a minimizar
+			# t(tpS)%*% tP <- vector que aparece en la funcion cuadratica a minimizar
+			# Amat <- ver linea 137:141
+			# bvec <- ver linea 149
+			# meq  <- the first meq constraints are treated as equality constraints, all further as inequality constraints (defaults to 0).
             aa <- try(solve.QP(t(tP)%*% tP, t(tpS) %*% tP, Amat,bvec, meq = 1),TRUE)
+			# se genera un vector el cual se les asignara las soluciones obtenidas en aa
             b <- rep(NA, q0)
             if(class(aa) != "try-error"){
                 b <-aa$solution
             }
+			#append a la matriz boot una fila nueva añadiendole b
             boot <- rbind(boot, b)
         }
         
         if(verbose)
         cat("\n")
+
         b.cf <- tmp
+		#a la primera columna se le asigna las medias de las columnas
         b.cf[,1] <- colMeans(boot,na.rm=TRUE)
         colnames(b.cf) <- "iSAb"
+		#aplica la funcion de desviacion de estandar a los extremos de boot 
+		#apply() <- Returns a vector or array or list of values obtained by applying a function to margins of an array or matrix. 
         b.sd <- apply(boot,2, function(u) sd(u, na.rm=TRUE))
         #print(b.sd)
+		#b.t corresponde al coeficiente de variacion (mu/sigma)
         b.t <- NA
         if(!is.na(sum(b.sd)))
         b.t <- b.cf/b.sd
         
-        
+        #se le asigna la matriz de error estandar, z value y confidencia (linea 118)
         tabb <- tb
+		#se remplaza la primera columna con el vector de medias
         tabb[,1] <- b.cf
+		#se remplaza la segunda columa con el vector de sigma
         tabb[,2] <- b.sd
+		#se reemplaza la tercera columna  con el vector de coeficiente de variacion
         tabb[,3] <- b.t
+		#se calcula la norma P y se coloca en la columna 4
         tabb[,4] <- pnorm(tabb[,3],lower.tail=FALSE)*2
     } else {
+	#Si no hay bootstraping, tabb se le asigna tabc y a la solucion b se le añade qp (linea 174)
         tabb <- tabc
-        b.cf <- qp
+        b.cf <- qp 
     }
-    
+    #Se define la funcion predict
     predict.iSA <- function(x){
-        
+        #se busca el indice del elemento X en nS
         idx <- match(x, nS)
+		#se aplica a entre los valores 1:lD (linea 107) la formula P[i,x]*b.cf[x]/pS[i], para obtener el valor mayor para cada uno de los indices idx obtenidos.
         sapply(idx, function(i) which.max(sapply(1:lD,function(x) P[i,x]*b.cf[x]/pS[i]))) -> aa
+		#se guarda el resultado anterior
         nD[aa]
     }
     
     pred <- NULL
+	#se obtiene las predicciones
     if(predict){
         pred <- predict.iSA(S)
     }
+	#se obtiene el tiempo
     etime <- (proc.time()-ptm)[1]
     if(verbose)
     cat(sprintf("\nElapsed time: %.2f seconds\n",etime))
+	#si ret.boot, se debuelve el bootstraping, de lo contrario se retorna null en ese argumento.
     if(ret.boot)
      return(list( est=qp, tab=tabc, best=b.cf, btab=tabb, boot=boot, pred=pred,time=etime ) )
     return(list( est=qp, tab=tabc, best=b.cf, btab=tabb, boot=NULL, pred=pred,time=etime ) )
